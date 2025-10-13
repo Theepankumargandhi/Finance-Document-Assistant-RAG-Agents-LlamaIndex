@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: finance-assistant-svc
+  namespace: finance-assistant
+spec:
+  type: LoadBalancer
+  selector:
+    app: finance-assistant
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8501

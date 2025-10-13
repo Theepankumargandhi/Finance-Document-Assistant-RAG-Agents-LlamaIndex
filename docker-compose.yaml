@@ -1,0 +1,17 @@
+services:
+  finance-assistant:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: finance-document-assistant-rag-agents:local
+    container_name: finance-assistant
+    ports:
+      - "8501:8501"
+    env_file:
+      - ./llm-app/streamlit/.env
+    environment:
+      STREAMLIT_SERVER_HEADLESS: "true"
+    restart: unless-stopped
+    # Dev hot-reload (optional):
+    # volumes:
+    #   - ./llm-app/streamlit:/app/llm-app/streamlit

@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finance-assistant-deploy
+  namespace: finance-assistant
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: finance-assistant }
+  template:
+    metadata:
+      labels: { app: finance-assistant }
+    spec:
+      containers:
+        - name: app
+          image: REPLACE_WITH_YOUR_ECR_URI   # e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/finance-assistant:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8501
+          env:
+            - name: ES_HOST
+              valueFrom: { secretKeyRef: { name: app-secrets, key: ES_HOST } }
+            - name: ES_API_KEY
+              valueFrom: { secretKeyRef: { name: app-secrets, key: ES_API_KEY } }
+            - name: ES_INDEX
+              valueFrom: { secretKeyRef: { name: app-secrets, key: ES_INDEX } }
