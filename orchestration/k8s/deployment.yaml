@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
         - name: app
-          image: REPLACE_WITH_YOUR_ECR_URI   # e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/finance-assistant:latest
+          image: ghcr.io/theepankumargandhi/finance-document-assistant-rag-agents:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8501
