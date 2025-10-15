@@ -19,7 +19,7 @@ This version is a **LlamaIndex-powered upgrade**, integrating **Elasticsearch hy
 
 ---
 
-##  Core Features (Retained + Enhanced)
+**Core Features (Retained + Enhanced)**
 
 | Category | Description |
 |-----------|--------------|
