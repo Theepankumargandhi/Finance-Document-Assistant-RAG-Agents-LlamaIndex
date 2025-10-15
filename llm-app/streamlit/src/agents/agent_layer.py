@@ -1,4 +1,4 @@
-# llm-app/streamlit/src/agent_layer.py
+# llm-app/streamlit/src/agents/agent_layer.py  (works if placed at src/agent_layer.py too)
 
 import os
 import sys
@@ -13,23 +13,31 @@ from langchain_community.llms import HuggingFacePipeline
 
 from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
 
-# Make sure we can import local modules in ./src
+# --- Robust module path handling (supports src/ or src/agents/ layout) ---
 HERE = os.path.dirname(__file__)
-if HERE not in sys.path:
-    sys.path.append(HERE)
+SRC_ROOT = os.path.abspath(os.path.join(HERE, ".."))          # ../src if we are in src/agents
+PROJECT_ROOT = os.path.abspath(os.path.join(HERE, "../.."))   # repo root from src/agents
 
-# Robust .env load (same pattern as search_backend)
+for p in {HERE, SRC_ROOT, PROJECT_ROOT}:
+    if p not in sys.path:
+        sys.path.append(p)
+
+# --- Robust .env load ---
 dotenv_path = find_dotenv(filename=".env", usecwd=True)
 if dotenv_path:
     load_dotenv(dotenv_path)
 else:
-    alt = os.path.abspath(os.path.join(HERE, "../.env"))
+    alt = os.path.abspath(os.path.join(PROJECT_ROOT, ".env"))
     if os.path.exists(alt):
         load_dotenv(alt)
 
-# --- Tools we reuse ---
+# --- Tools we reuse (bridged to LlamaIndex) ---
 from src.core.search_backend import hybrid
-from src.analytics.plot_tools import plot_data  # for Phase 5 charts
+try:
+    # optional plotting helper
+    from src.analytics.plot_tools import plot_data  # noqa: F401
+except Exception:
+    plot_data = None  # type: ignore
 
 # --- Lightweight local LLM (no external keys) ---
 _MODEL_NAME = os.getenv("AGENT_MODEL", "google/flan-t5-small")
@@ -42,7 +50,7 @@ def _build_text2text_llm(model_name: str = _MODEL_NAME):
         model=mdl,
         tokenizer=tok,
         max_new_tokens=256,
-        temperature=0.0
+        temperature=0.0,
     )
     return HuggingFacePipeline(pipeline=gen)
 
@@ -54,6 +62,13 @@ def summarize_text(text: str, max_chars: int = 4000) -> str:
     summ = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
     out = summ(text, max_length=180, min_length=50, do_sample=False)
     return out[0]["summary_text"].strip()
+
+# --- Small helpers for schema differences (text vs content) ---
+def _src_text(src: Dict[str, Any]) -> str:
+    return (src.get("text") or src.get("content") or "").strip()
+
+def _src_title(src: Dict[str, Any], fallback: str) -> str:
+    return (src.get("title") or fallback).strip()
 
 # --- Prompt ---
 _PROMPT = PromptTemplate(
@@ -100,8 +115,8 @@ class FinanceAgent:
 
     # --- Main run ---
     def run(self, user_message: str, k: Optional[int] = None) -> Dict[str, Any]:
-        # 0) If user asked for a chart, try to plot first
-        if _wants_plot(user_message):
+        # 0) If user asked for a chart, try to plot first (if plotting tool available)
+        if _wants_plot(user_message) and plot_data is not None:
             metric = _extract_metric_for_plot(user_message)
             if metric:
                 try:
@@ -120,7 +135,10 @@ class FinanceAgent:
         hits = self.search_docs(user_message, k)
         if not hits:
             return {
-                "answer": "I couldn't find this in the indexed finance documents. Try a more specific query (company, metric, period).",
+                "answer": (
+                    "I couldn't find this in the indexed finance documents. "
+                    "Try adding specifics like a company, metric, or time period."
+                ),
                 "sources": [],
                 "citations": []
             }
@@ -130,9 +148,9 @@ class FinanceAgent:
         top_score = float(hits[0].get("_score") or 0.0)
         for i, h in enumerate(hits, 1):
             src = h.get("_source", {}) or {}
-            title = src.get("title") or f"Financial snippet #{i}"
+            title = _src_title(src, f"Financial snippet #{i}")
             did = h.get("_id", f"doc-{i}")
-            content = (src.get("content") or "").strip()
+            content = _src_text(src)
             if content:
                 snippets.append(f"[{i}] {title} (id={did})\n{content}\n")
                 cite_elems.append(f"[{i}] {title} (id={did})")
@@ -157,7 +175,7 @@ class FinanceAgent:
 
         # 5) Fallback: if too short or only citations, summarize the top passage
         if len(answer) < 20 or (answer.lower().startswith("sources") and "sources:" in answer.lower()):
-            top_text = (hits[0].get("_source", {}).get("content") or "")[:1500]
+            top_text = _src_text(hits[0].get("_source", {}) or {})[:1500]
             try:
                 summary = summarize_text(top_text) if top_text else ""
             except Exception:

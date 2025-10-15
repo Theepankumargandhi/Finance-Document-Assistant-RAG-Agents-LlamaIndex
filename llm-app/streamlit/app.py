@@ -4,7 +4,6 @@ import os
 import sys
 import time
 import streamlit as st
-from transformers import pipeline
 from dotenv import load_dotenv
 
 # ---------------------------------------------------
@@ -18,29 +17,32 @@ if SRC_DIR not in sys.path:
 load_dotenv()
 
 # ---------------------------------------------------
-# Internal imports (NOTE: no "src." prefix here)
+# Internal imports
 # ---------------------------------------------------
-from src.core.search_backend import bm25, knn, hybrid
+from core.llamaindex_backend import LlamaIndexBackend
 
-# Optional reranker (safe import)
-hybrid_rerank = None
-HAS_RERANK = False
-try:
-    from src.core.search_backend import hybrid_rerank as _hybrid_rerank
-    hybrid_rerank = _hybrid_rerank
-    HAS_RERANK = True
-except Exception:
-    pass
-
-from src.analytics.llm import (
+from analytics.llm import (
     generate_document_id,
     captureUserInput,
     captureUserFeedback,
 )
 
 # Agents (your files live in src/agents/)
-from src.agents.agent_layer import init_agent, run_agent
-from src.agents.summarizer_agent import summarize_query
+try:
+    from agents.agent_layer import init_agent, run_agent
+    from agents.summarizer_agent import summarize_query
+    HAS_AGENTS = True
+except:
+    HAS_AGENTS = False
+
+# ---------------------------------------------------
+# Helpers: handle 'text' or 'content' transparently
+# ---------------------------------------------------
+def _src_text(src: dict) -> str:
+    return (src.get("text") or src.get("content") or "").strip()
+
+def _src_title(src: dict, fallback: str) -> str:
+    return (src.get("title") or fallback).strip()
 
 # ---------------------------------------------------
 # Page config
@@ -63,13 +65,21 @@ if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = []
 
 # ---------------------------------------------------
-# QA pipeline (extractive, local)
+# Initialize LlamaIndex Backend
 # ---------------------------------------------------
-@st.cache_resource(show_spinner=False)
-def get_qa():
-    return pipeline("question-answering", model="distilbert-base-cased-distilled-squad")
+@st.cache_resource(show_spinner="Initializing RAG system...")
+def get_backend():
+    try:
+        return LlamaIndexBackend()
+    except Exception as e:
+        st.error(f"Failed to initialize backend: {e}")
+        st.info("Check your .env file has: ES_HOST, ES_API_KEY, OPENAI_API_KEY")
+        return None
 
-qa = get_qa()
+backend = get_backend()
+
+if backend is None:
+    st.stop()
 
 # ---------------------------------------------------
 # Sidebar controls (shared)
@@ -77,27 +87,25 @@ qa = get_qa()
 st.sidebar.header("Search settings")
 
 mode_options = ["Hybrid (RRF)", "BM25", "kNN (vectors)"]
-if HAS_RERANK and callable(hybrid_rerank):
-    mode_options.insert(1, "Hybrid + Rerank")
-
 mode = st.sidebar.selectbox("Retrieval mode", mode_options, index=0)
 k = st.sidebar.slider("Results to retrieve", 3, 20, 8)
-max_ctx_chars = st.sidebar.slider("Max context chars (concat top-k)", 500, 8000, 3000, step=250)
 
-st.sidebar.caption(
-    f"Index: {os.getenv('ES_INDEX', 'finance_docs')}  •  Host set: {'✅' if os.getenv('ES_HOST') else '❌'}"
-)
-
-# Map retrieval functions
-retrievers = {
-    "Hybrid (RRF)": hybrid,
-    "BM25": bm25,
-    "kNN (vectors)": knn,
+# Map UI mode to backend mode
+mode_map = {
+    "Hybrid (RRF)": "hybrid",
+    "BM25": "bm25",
+    "kNN (vectors)": "vector",
 }
-if HAS_RERANK and callable(hybrid_rerank):
-    retrievers["Hybrid + Rerank"] = hybrid_rerank
+backend_mode = mode_map[mode]
 
-search_fn = retrievers[mode]
+# Show index/config hints
+st.sidebar.caption(
+    "BM25: "
+    f"{os.getenv('ES_BM25_INDEX', 'finance_docs_bm25')}  •  "
+    "Vector: "
+    f"{os.getenv('ES_VECTOR_INDEX', 'finance_docs_vector')}  •  "
+    f"LLM: {os.getenv('OPENAI_MODEL', 'gpt-4o-mini')}"
+)
 
 # ---------------------------------------------------
 # Tabs
@@ -117,87 +125,91 @@ with tab_search:
         if not query_text.strip():
             st.warning("Please enter a question before clicking **Ask**.")
         else:
-            with st.spinner("Searching and extracting an answer…"):
+            with st.spinner("Generating answer with LLM..."):
                 t0 = time.time()
 
-                # 1) Retrieve
-                hits = search_fn(query_text, k=k)
-
-                # 2) Build context from top-k (concat)
-                snippets = []
-                for h in hits:
-                    src = h.get("_source", {}) or {}
-                    content = (src.get("content") or "").strip()
-                    if content:
-                        snippets.append(content)
-                context = "\n\n".join(snippets)[:max_ctx_chars] if snippets else ""
-
-                # 3) Extract answer
-                ans = qa({"question": query_text, "context": context}) if context else {"answer": "", "score": 0.0}
-                answer = (ans.get("answer") or "").strip()
-                score = float(ans.get("score") or 0.0)
-                latency = time.time() - t0
-
-                # 4) Telemetry (best-effort)
                 try:
-                    doc_id = generate_document_id(query_text, answer)
-                    captureUserInput(
-                        doc_id,
-                        query_text.replace("'", ""),
-                        answer,
-                        score,
-                        latency,
-                        1.0 if hits else 0.0,  # UI placeholders
-                        1.0 if hits else 0.0,
+                    # Build QueryEngine with LLM
+                    query_engine = backend.build_query_engine(
+                        top_k=k,
+                        mode=backend_mode,
+                        response_mode="compact"
                     )
-                    st.session_state.docId = doc_id
+                    
+                    # Query and get LLM-generated response
+                    response = query_engine.query(query_text)
+                    
+                    answer = response.response.strip() if response.response else "(no answer generated)"
+                    source_nodes = response.source_nodes if hasattr(response, 'source_nodes') else []
+                    
+                    latency = time.time() - t0
+                    
+                    # Calculate hit rate and MRR (simple: 1.0 if we got results)
+                    hit_rate = 1.0 if source_nodes else 0.0
+                    mrr = 1.0 if source_nodes else 0.0
+                    
+                    # Telemetry (best-effort)
+                    try:
+                        doc_id = generate_document_id(query_text, answer)
+                        captureUserInput(
+                            doc_id,
+                            query_text.replace("'", ""),
+                            answer,
+                            1.0,  # confidence placeholder
+                            latency,
+                            hit_rate,
+                            mrr,
+                        )
+                        st.session_state.docId = doc_id
+                    except Exception as e:
+                        st.caption(f"Telemetry skipped: {e}")
+
+                    # Save for feedback section
+                    st.session_state.result = answer
+                    st.session_state.userInput = query_text.replace("'", "")
+                    st.session_state.feedbackSubmitted = False
+
+                    # Show answer
+                    st.subheader("Answer")
+                    st.markdown(f"**{answer}**")
+                    st.caption(f"Mode: {mode} • Latency: {latency:.2f}s • Sources: {len(source_nodes)}")
+
+                    # Show source citations
+                    if source_nodes:
+                        st.subheader("Sources")
+                        for i, node_with_score in enumerate(source_nodes, 1):
+                            node = node_with_score.node
+                            score = node_with_score.score if hasattr(node_with_score, 'score') else 0.0
+                            
+                            text = node.text if hasattr(node, 'text') else node.get_content()
+                            metadata = node.metadata if hasattr(node, 'metadata') else {}
+                            title = metadata.get("title") or metadata.get("doc_id") or f"Document {i}"
+                            
+                            with st.expander(f"{i}. {title} (Score: {score:.3f})"):
+                                st.write(text)
+                                if metadata:
+                                    meta_str = " | ".join(
+                                        f"{k}: {v}" for k, v in metadata.items() 
+                                        if v and k not in ["title", "text"]
+                                    )
+                                    if meta_str:
+                                        st.caption(meta_str)
+                    else:
+                        st.warning("No sources found. Try a different search mode or query.")
+
                 except Exception as e:
-                    st.caption(f"Telemetry skipped: {e}")
-
-                # 5) Save for feedback section
-                st.session_state.result = answer or "(no exact span found—try Hybrid and increase k)"
-                st.session_state.userInput = query_text.replace("'", "")
-                st.session_state.feedbackSubmitted = False
-
-            # 6) Show answer & sources
-            st.subheader("Answer")
-
-            best_source = None
-            best_text = ""
-            if "hits" in locals() and hits:
-                s0 = hits[0].get("_source", {}) or {}
-                best_source = s0.get("title") or hits[0].get("_id", "Document 1")
-                best_text = (s0.get("content") or "").strip()
-
-            st.markdown(f"**{st.session_state.result}**")
-            st.caption(f"Confidence: {score:.3f} • Mode: {mode} • Latency: {latency:.2f}s")
-            if best_source:
-                st.caption(f"Source: {best_source}")
-
-            if best_text and answer and (answer in best_text):
-                idx = best_text.find(answer)
-                pre = best_text[max(0, idx - 180): idx]
-                post = best_text[idx + len(answer): idx + len(answer) + 180]
-                st.markdown("**Highlighted passage**")
-                st.write(pre + "**" + answer + "**" + post)
-
-            st.subheader("Top results")
-            if "hits" in locals():
-                for i, h in enumerate(hits, 1):
-                    src = h.get("_source", {}) or {}
-                    title = src.get("title") or f"Document {i}"
-                    content = src.get("content") or ""
-                    meta = src.get("metadata") or {}
-                    with st.expander(f"{i}. {title}"):
-                        st.write(content)
-                        if meta:
-                            st.caption(" | ".join(f"{mk}: {mv}" for mk, mv in meta.items() if mv))
+                    st.error(f"Error generating answer: {e}")
+                    st.exception(e)
+                    st.info("💡 Troubleshooting:")
+                    st.info("1. Check OPENAI_API_KEY is set correctly in .env")
+                    st.info("2. Verify vector index has documents (run the indexing script)")
+                    st.info("3. Try BM25 mode first to test basic retrieval")
 
     # Feedback
     if st.session_state.result and not st.session_state.feedbackSubmitted:
         c1, c2 = st.columns(2)
         with c1:
-            if st.button("Satisfied"):
+            if st.button("✅ Satisfied"):
                 try:
                     captureUserFeedback(
                         st.session_state.docId,
@@ -205,10 +217,11 @@ with tab_search:
                         st.session_state.result,
                         True,
                     )
+                    st.success("Thanks for your feedback!")
                 finally:
                     st.session_state.feedbackSubmitted = True
         with c2:
-            if st.button("Unsatisfied"):
+            if st.button("❌ Unsatisfied"):
                 try:
                     captureUserFeedback(
                         st.session_state.docId,
@@ -216,6 +229,7 @@ with tab_search:
                         st.session_state.result,
                         False,
                     )
+                    st.warning("Thanks for your feedback!")
                 finally:
                     st.session_state.feedbackSubmitted = True
 
@@ -223,6 +237,10 @@ with tab_search:
 # Tab 2: Chat (Agent)
 # ===========================
 with tab_agent:
+    if not HAS_AGENTS:
+        st.warning("Agent functionality not available. Install required dependencies.")
+        st.stop()
+    
     st.subheader("Chat with Agent (memory on)")
 
     # Keep one agent instance per session & sync with current k
@@ -264,8 +282,8 @@ with tab_agent:
             st.markdown("**Top sources**")
             for i, h in enumerate((out.get("sources") or [])[:3], 1):
                 src = h.get("_source", {}) or {}
-                title = src.get("title") or f"Document {i}"
-                content = src.get("content") or ""
+                title = _src_title(src, f"Document {i}")
+                content = _src_text(src)
                 with st.expander(f"{i}. {title}"):
                     st.write(content)
 
@@ -288,8 +306,8 @@ with tab_agent:
                     st.markdown("**Top sources**")
                     for i, h in enumerate((res.get("sources") or [])[:3], 1):
                         src = h.get("_source", {}) or {}
-                        title = src.get("title") or f"Document {i}"
-                        content = src.get("content") or ""
+                        title = _src_title(src, f"Document {i}")
+                        content = _src_text(src)
                         with st.expander(f"{i}. {title}"):
                             st.write(content)
     except Exception as e:

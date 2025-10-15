@@ -3,7 +3,7 @@ import requests
 import hashlib
 import time
 from datetime import datetime, timezone
-from core.connection import mongodb_connection, postgre_connection
+from src.core.connection import mongodb_connection, postgre_connection
 import os, sys
 SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if SRC_DIR not in sys.path:
