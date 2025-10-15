@@ -115,7 +115,7 @@ Evaluation + Logging
 Results and metrics flow into MLflow and PostgreSQL for visualization on Grafana.
 
 ---
-**Environment Setup**
+## Environment Setup
 ---
 Create Environment
 ```
@@ -123,7 +123,7 @@ conda create -n LLM_env python=3.10
 conda activate LLM_env
 pip install -r requirements.txt
 ```
-**Setup Environment Variables**
+## Setup Environment Variables
 ---
 .env file example:
 ```
@@ -144,7 +144,7 @@ cd llm-app/streamlit
 streamlit run app.py
 ```
 
-**Docker Deployment**
+## Docker Deployment
 
 **Build & Run Locally**
 ```
@@ -157,7 +157,7 @@ docker run -p 8501:8501 --env-file .env finance-assistant-llamaindex
 docker compose up --build
 ```
 ---
-**AWS EKS Deployment**
+## AWS EKS Deployment
 
 Create Cluster
 ```
@@ -186,7 +186,7 @@ kubectl get svc -n finance-assistant
 | Resource Utilization     | AWS CloudWatch / Grafana           |
 
 
-**Example Query**
+## Example Query
 
 Input:
 
