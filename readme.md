@@ -1,165 +1,211 @@
-# Background
+# Finance Document Assistant — LlamaIndex + RAG + Agents + MLOps + AWS EKS
 
-In today's legal industry, the sheer volume of legal documents, case laws, and statutes available can be overwhelming for lawyers and legal professionals. Efficiently managing and retrieving relevant legal information is crucial to building a strong case or providing timely advice to clients. However, the manual process of sifting through extensive documents can be time-consuming and prone to human error. The evolution of technology, particularly in artificial intelligence (AI) and natural language processing (NLP), has opened new avenues for enhancing legal research processes. By utilizing advanced AI models such as large language models (LLMs) and techniques like Retrieval-Augmented Generation (RAG), it is now possible to automate the retrieval of legal information with high accuracy and relevance.
+An end-to-end **Retrieval-Augmented Generation (RAG)** and **Agentic Document Assistant** designed for financial text intelligence.  
+This version is a **LlamaIndex-powered upgrade**, integrating **Elasticsearch hybrid retrieval**, **OpenAI embeddings**, and **LangChain-based multi-agent orchestration**, deployed via **Docker**, **GitHub Actions (CI/CD)**, and **AWS EKS (Kubernetes)**.
 
-# Problem Statement
+---
 
-Law firms and legal professionals face significant challenges in managing large collections of legal documents, case laws, and statutes. The manual process of searching for relevant information is not only time-consuming but also inefficient, as it may lead to missing critical information or wasting valuable resources on non-essential documents. Existing legal research tools often fail to provide contextually relevant suggestions or insights, limiting their usefulness in complex cases. The need for a system that can quickly, accurately, and contextually retrieve relevant legal documents is more pressing than ever.
+##  Key Upgrades (LlamaIndex Edition)
 
-# Solution
+| Feature | Description |
+|----------|--------------|
+| **LlamaIndex Integration** | Replaces manual retriever logic with unified LlamaIndex pipelines (`VectorStoreIndex`, `RetrieverQueryEngine`) |
+| **OpenAI Embeddings** | Uses `text-embedding-3-small` for dense retrieval via `llama_index.embeddings.openai` |
+| **Elasticsearch Vector Store Adapter** | Seamlessly indexes dense vectors + BM25 documents through `llama_index.vector_stores.elasticsearch` |
+| **Hybrid RRF Retriever** | Combines LlamaIndex BM25 + vector search with Reciprocal Rank Fusion (RRF) for improved recall |
+| **Automatic Backend Configuration** | `.env`-driven initialization of embedding model, LLM provider, and Elasticsearch credentials |
+| **Improved Query Engine** | Unified `LlamaIndexBackend` exposes `.query()` and `.build_query_engine()` for vector, BM25, or hybrid retrieval |
+| **Local Offline Support** | Falls back to HuggingFace embeddings + Flan-T5 LLM when no API key is available |
 
-The Legal Document Assistant aims to solve these challenges by implementing a Retrieval-Augmented Generation (RAG) approach, combined with a powerful large language model (LLM). This system allows law firms to efficiently query vast collections of legal documents and receive contextually accurate answer. By integrating LLM with a knowledge base, the application provides lawyers with instant access to relevant case laws, legal precedents, statutes, and other legal documents. The assistant can streamline legal research, reduce the time spent on manual searches, and ensure that critical information is not overlooked, ultimately improving the legal research process and enhancing decision-making capabilities.
+---
 
+##  Core Features (Retained + Enhanced)
 
-## RAG Flow
+| Category | Description |
+|-----------|--------------|
+| **Hybrid Search (RRF)** | BM25 + OpenAI or HuggingFace embeddings fused with RRF inside LlamaIndex |
+| **Agents (LangChain)** | Finance-aware agents for contextual chat, summarization, and metric visualization |
+| **Conversational QA** | Uses OpenAI LLMs (or local Flan-T5 fallback) for context-grounded answers |
+| **Evaluation Metrics** | Automated Hit-Rate, MRR, and Latency tracking — logged to MLflow + PostgreSQL |
+| **MLOps Integration** | MLflow + Grafana for experiment and latency monitoring |
+| **Containerization** | Docker and CI/CD with GitHub Actions |
+| **Cloud Deployment** | AWS EKS (Kubernetes) manifests with Secrets and Namespaces |
+| **Telemetry + Feedback** | PostgreSQL tables for user queries, latency, and satisfaction metrics |
 
-![RAG FLOW](./images/llm%20rag%20flow.png)
+---
 
-### Dataset
+## Project Structure
 
-- https://www.kaggle.com/datasets/umarbutler/open-australian-legal-qa/data?select=qa.jsonl
-- https://www.kaggle.com/datasets/amohankumar/legal-text-classification-dataset
-
-### Tech Stack
-
-The Legal Document Assistant leverages a combination of cutting-edge technologies and tools to provide an efficient and scalable solution for legal document management and retrieval. Below is an overview of the key components of the tech stack:
-
-- Python: The core language used for developing the application, enabling seamless integration of machine learning models, data processing, and backend services.
-- Streamlit: A lightweight web framework used to create an intuitive and interactive user interface (UI) for the Legal Document Assistant. Streamlit allows lawyers and legal professionals to interact with the system effortlessly, providing a seamless experience for querying documents and retrieving legal information.
-- Airflow: A powerful orchestration tool used to manage and schedule workflows, ensuring that data ingestion, processing, and retrieval tasks are automated and run efficiently.
-- Elasticsearch: A distributed search engine used to index and query large collections of legal documents. Elasticsearch allows for fast and efficient full-text search, ensuring that relevant case laws, statutes, and legal documents can be retrieved quickly.
-- Google BERT LLM Model: The Google BERT (Bidirectional Encoder Representations from Transformers) model is employed to enhance the retrieval-augmented generation (RAG) flow. This large language model provides contextually accurate suggestions, summaries, and insights based on user queries, making the search results more meaningful and relevant.
-- Grafana: A real-time monitoring and visualization tool used to track the performance of the application. It allows developers and administrators to gain insights into system health, query performance, and other important metrics to ensure smooth operations.
-- Docker: Used to containerize the entire application, ensuring consistency across different environments and simplifying deployment. Docker ensures that all services (e.g., Airflow, Elasticsearch, BERT model, Grafana) are isolated, scalable, and easy to manage.
-
-### Retrieval
-
-In the retrieval phase, the Legal Document Assistant utilizes both **PostgreSQL** and **Elasticsearch** to efficiently process and answer user queries by combining structured data storage and high-performance search capabilities.
-
-1. Dataset Storage and Indexing: Legal documents, case laws, and statutes are stored in a PostgreSQL database. This relational database organizes the dataset, maintaining the structure and integrity of the legal information. PostgreSQL stores detailed metadata, including document types, case names, statutes, and related legal details. To enhance search performance, an index of this dataset is created in Elasticsearch, allowing for faster retrieval of relevant information.
-
-2. Search via Elasticsearch: Once the PostgreSQL dataset is indexed into Elasticsearch, it enables full-text search across the stored documents. When a user submits a query, Elasticsearch performs a fast, scalable search, looking through the indexed documents for matches based on the user's question. Elasticsearch uses advanced ranking algorithms to ensure the most relevant legal documents are returned. The results are filtered and ranked by relevance, offering accurate and contextually appropriate legal information.
-
-By indexing the dataset from PostgreSQL into Elasticsearch, the retrieval process becomes faster and more efficient, allowing the Legal Document Assistant to quickly access and return the most relevant documents in response to user queries.
-
-### Retrieval-Augmented Generation (RAG)
-The Legal Document Assistant employs a Retrieval-Augmented Generation (RAG) approach to provide contextually accurate responses based on user queries. This step combines the retrieval power of Elasticsearch with the language generation capabilities of the [google-bert/bert-large-uncased-whole-word-masking-finetuned-squad](https://huggingface.co/google-bert/bert-large-uncased-whole-word-masking-finetuned-squad?context=In+Nasr+v+NRMA+Insurance+%5B2006%5D+NSWSC+1018%2C+the+plaintiff%27s+appeal+was+lodged+out+of+time+because+the+summons+was+filed+on+8+June+2006%2C+seven+months+after+the+decision+of+the+Local+Court+was+made+on+4+October+2005.+No+explanation+was+provided+for+this+delay.&text=In+the+case+of+Nasr+v+NRMA+Insurance+%5B2006%5D+NSWSC+1018%2C+why+was+the+plaintiff%27s+appeal+lodged+out+of+time%3F) from Hugging Face.
-
-1. Integration with Google BERT API: To enhance the relevance and quality of the search results, the application leverages the Google BERT (Bidirectional Encoder Representations from Transformers) model via the Hugging Face API. This model enables the system to generate summaries, suggestions, and context-aware insights based on the retrieved legal documents. The BERT model interprets the user’s query and provides responses that are contextually aligned with legal texts.
-2. Hugging Face API Key: In order to use the Google BERT model from Hugging Face, the application requires an API key (HUGGINGFACE_KEY) from the Hugging Face platform. This key provides access to the BERT API and must be securely stored in the environment configuration.
-3. Docker Compose Setup: The HUGGINGFACE_KEY is integrated into the system using Docker Compose. The API key is placed within the Docker Compose environment file, ensuring secure access during runtime. Here’s how the key is added:
 ```
-  app:
-    build: llm-app/.
-    container_name: llm_app
-    environment:
-      - HUGGINGFACE_KEY=<YOUR_API_KEY>
-    volumes:
-      - ./llm-app/:/app
-    networks:
-      - network
-    depends_on:
-      - elasticsearch
-    ports:
-      - "8501:8501"
+Finance-Document-Assistant-RAG-Agents-LlamaIndex/
+│
+├── llm-app/
+│ └── streamlit/
+│ ├── app.py # Main Streamlit UI (Search + Chat)
+│ └── src/
+│ ├── agents/ # Agent layer (LangChain orchestration)
+│ │ ├── agent_layer.py
+│ │ └── summarizer_agent.py
+│ ├── analytics/ # Evaluation + telemetry + metrics
+│ │ ├── evaluation.py
+│ │ ├── llm.py
+│ │ └── plot_tools.py
+│ ├── core/ # Core RAG + LlamaIndex backend
+│ │ ├── llamaindex_backend.py # Unified backend (OpenAI + ES)
+│ │ ├── search_backend.py # Bridges old bm25/hybrid API
+│ │ ├── connection.py # DB + ES connectors
+│ │ ├── elasticSearch.py # BM25 helpers
+│ │ ├── index_vectors.py # Vector indexing via LlamaIndex
+│ │ └── raw_index_vectors.py # Direct REST indexing (fallback)
+│ ├── ground_truth/ # Evaluation dataset
+│ └── utils/ # Preprocessing utilities
+│
+├── orchestration/k8s/ # Kubernetes manifests
+│ ├── namespace.yaml
+│ ├── secrets.yaml
+│ ├── deployment.yaml
+│ └── service.yaml
+│
+├── Dockerfile
+├── docker-compose.yaml
+├── requirements.txt
+├── .env.example
+├── scripts/run_evaluation.py
+└── .github/workflows/build.yml # GitHub Actions CI/CD
+```
+---
+
+---
+
+## LlamaIndex Architecture Overview
+
+```mermaid
+flowchart TD
+    A["User Query"] --> B["Streamlit UI"]
+    B --> C["LlamaIndex Backend"]
+    C -->|BM25 + Vector Fusion| D["Elasticsearch Vector Store"]
+    D --> E["LLM Layer (OpenAI / Flan-T5)"]
+    E --> F["LangChain Agent Layer"]
+    F --> G["Response + Telemetry"]
+    G --> H["PostgreSQL + MLflow + Grafana"]
+    H --> I["AWS EKS Cluster"]
+```
+---
+**How LlamaIndex Works Here**
+
+Initialization
+LlamaIndexBackend() loads .env → configures embeddings, LLM, and node parser.
+
+Vector Indexing
+Runs via index_vectors.py or raw_index_vectors.py to embed documents and push to Elasticsearch.
+
+Hybrid Retrieval
+SimpleHybridRetriever combines vector + BM25 results using Reciprocal Rank Fusion (RRF).
+
+Query Engine
+build_query_engine() returns a RetrieverQueryEngine for structured RAG QA.
+
+Streaming Integration
+search_backend.py wraps these calls, maintaining compatibility with old function names (bm25, knn, hybrid).
+
+Agents Layer
+The FinanceAgent uses this backend for context retrieval, summarization, and charting.
+
+Evaluation + Logging
+Results and metrics flow into MLflow and PostgreSQL for visualization on Grafana.
+
+---
+**Environment Setup**
+---
+Create Environment
+```
+conda create -n LLM_env python=3.10
+conda activate LLM_env
+pip install -r requirements.txt
+```
+**Setup Environment Variables**
+---
+.env file example:
+```
+ES_HOST=https://your-elasticsearch-host:443
+ES_API_KEY=your-api-key
+ES_VECTOR_INDEX=finance_docs_vector
+ES_BM25_INDEX=finance_docs_bm25
+OPENAI_API_KEY=sk-your-key
+LLM_PROVIDER=openai
+EMBED_MODEL=text-embedding-3-small
+AGENT_MODEL=google/flan-t5-small
+CHUNK_SIZE=800
+CHUNK_OVERLAP=120
+```
+**Run Locally with Streamlit**
+```
+cd llm-app/streamlit
+streamlit run app.py
 ```
 
-This allows the Legal Document Assistant to seamlessly interact with the Hugging Face API for enhanced document retrieval and generation, ensuring that the output is contextually relevant and precise.
+**Docker Deployment**
 
-### Interface
-
-![streamlit interface](./images/llm.png)
-
-The Legal Document Assistant provides an intuitive and user-friendly interface built using Streamlit. The interface is designed to allow legal professionals to easily interact with the system, submit queries, and provide feedback on the results. Key features of the interface include:
-
-1. Text Input Field: Users can enter their legal questions or queries into the text field. This input is sent to the system, which processes the query through the Retrieval-Augmented Generation (RAG) pipeline to return relevant legal documents and summaries.
-2. Ask Button: After entering a query, users click the Ask button to submit their question. The system then retrieves and generates responses based on the user input, leveraging Elasticsearch for document search and the Google BERT model for contextual generation.
-3. Satisfaction Button: Once the results are displayed, users can provide feedback on the accuracy and relevance of the retrieved documents and generated summaries by clicking the Satisfaction button. This feedback helps monitor the quality of the responses and can be used for system improvement and performance tracking.
-
-The Streamlit interface ensures a smooth and seamless user experience, allowing legal professionals to efficiently query the system and interact with the results.
-
-### Ingestion Pipeline
-
-![airflow](./images/airflow.png)
-
-The data ingestion process involves loading legal documents from CSV and JSON files into PostgreSQL and indexing them into Elasticsearch. This is managed using **Apache Airflow**.
-
-1. Data Extraction
-CSV & JSON: Airflow extracts data from CSV and JSON files, converting it into a suitable format for PostgreSQL.
-2. Data Loading
-PostgreSQL: The extracted data is cleaned, transformed, and loaded into PostgreSQL tables using Airflow.
-3. Data Indexing
-Elasticsearch: Data is exported from PostgreSQL, indexed into Elasticsearch with appropriate mappings for efficient search.
-4. Monitoring
-Airflow monitors the pipeline for performance and errors, ensuring data integrity and prompt issue resolution.
-
-### RAG Evaluation
-
-To evaluate the effectiveness of the Retrieval-Augmented Generation (RAG) approach, we utilize two key metrics: Hit Rate and Mean Reciprocal Rank (MRR). Additionally, the evaluation incorporates scores obtained from Google BERT.
-
-1. Hit Rate: measures the proportion of queries for which the correct answer is found within a predefined number of top results.
-2. Mean Reciprocal Rank (MRR): calculates the average rank at which the first relevant result appears across all queries.
-3. Google BERT Scores: are obtained from the Google BERT model to evaluate the relevance and quality of generated summaries and suggestions.
-
-### Monitoring Dashboard
-
-![grafan](./images/dashboard.png)
-
-To track the performance and usage of the Legal Document Assistant, we utilize a Grafana dashboard that monitors key metrics in real time. The following metrics are visualized to ensure system efficiency and user satisfaction:
-
-1. Total Questions Answered
-  - Metric: The total number of user queries processed by the system.
-  - Purpose: Tracks overall usage and demand for the system.
-2. Total Users Filled Feedback
-  - Metric: The total number of users who provided feedback after receiving an answer.
-  - Purpose: Measures engagement and feedback collection for evaluating user experience.
-3. Satisfaction Rate
-  - Metric: The ratio of satisfied users (users who clicked “satisfied”) to the total number of users who filled feedback.
-  - Purpose: Indicates user satisfaction and helps identify areas for improvement.
-4. Response Time per Created Time (Time Series)
-  - Metric: Tracks the response time of the system for each query over time.
-  - Purpose: Monitors system performance and response efficiency.
-5. LLM Score, Hit Rate, and MRR Score per Time (Time Series)
-  - Metric: Visualizes the LLM-generated score, Hit Rate, and MRR over time for each query.
-  - Purpose: Evaluates the accuracy and effectiveness of the retrieval system and LLM performance over time.
-
-## How to run
-
-1. Get hugging face access token: Obtain a Hugging Face User Access Token by following the instructions on this page: [Hugging Face Security Tokens](https://huggingface.co/docs/hub/en/security-tokens).
-2. Fill in Hugging Face Key: Add your Hugging Face Access Token to the `docker-compose.yml` file under the environment variables section for the service requiring the key.
+**Build & Run Locally**
 ```
-  app:
-    build: llm-app/.
-    container_name: llm_app
-    environment:
-      - HUGGINGFACE_KEY=<YOUR_API_KEY>
-    volumes:
-      - ./llm-app/:/app
-    networks:
-      - network
-    depends_on:
-      - elasticsearch
-    ports:
-      - "8501:8501"
+docker build -t finance-assistant-llamaindex .
+docker run -p 8501:8501 --env-file .env finance-assistant-llamaindex
 ```
-3. Start Docker Containers: run this command `docker-compose up --build -d`
-4. Wait for Containers to Start: It may take some time for all the containers to fully initialize, especially Airflow. You can check the status by monitoring the logs or using Docker commands.
-5. Access Airflow: 
-  - Once the Airflow webserver is running, you can access it at `localhost:8080`,
-  - Log in using the default credentials (username: `airflow`, password: `airflow`), which are set in the `docker-compose.yml` file
-  - Start the DAG from the Airflow UI. The pipeline will extract data from CSV and JSON files and index it into Elasticsearch. The DAG runs automatically once per day.
-6. Access the Streamlit App
-  - Access the Streamlit app at `localhost:8501`
-  - After asking a question, if you receive a message like `It seems Elastic Search is still running, please refresh again`, wait for Elasticsearch to finish starting, then try again after a few seconds.
-7. Monitoring the App with Grafana
-  - Grafana can be accessed at `localhost:3000`
-  - Import the provided dashboard configuration `llm-app/dashboard.json` to monitor key metrics like response time, user satisfaction, and retrieval performance.
 
-### Questions Example
+**Docker Compose**
+```
+docker compose up --build
+```
+---
+**AWS EKS Deployment**
 
-You may used these questions example below to test the app. But, feel free to ask another question:
-1. Why did the plaintiff wait seven months to file an appeal?
-2. What was the outcome of the case?
-3. Can you provide more details on the clarification provided in Note 1?
-4. Can the landlord avoid liability for breaching this obligation if the state of disrepair is caused by the tenant's actions?
-5. What is the Commonwealth Bank of Australia fixed deposit account?
+Create Cluster
+```
+eksctl create cluster --name finance-assistant \
+  --region us-east-1 --node-type t3.medium --nodes 1
+```
+Apply Manifests
+```
+kubectl create namespace finance-assistant
+kubectl -n finance-assistant create secret generic app-secrets \
+  --from-literal=ES_HOST="..." \
+  --from-literal=ES_API_KEY="..." \
+  --from-literal=OPENAI_API_KEY="..."
+
+kubectl apply -f orchestration/k8s/
+```
+Access the Application
+```
+kubectl get svc -n finance-assistant
+```
+| Metric                   | Tool                               |
+| ------------------------ | ---------------------------------- |
+| Retrieval Hit Rate / MRR | MLflow                             |
+| Query Latency            | PostgreSQL + Grafana               |
+| User Feedback            | PostgreSQL (`feedback_data` table) |
+| Resource Utilization     | AWS CloudWatch / Grafana           |
+
+
+**Example Query**
+
+Input:
+
+What happened to the operating profit in Q3?
+
+Output:
+
+Operating profit increased by 18% compared to Q2 due to lower operating expenses.
+
+Mode Used: Hybrid (RRF via LlamaIndex)
+Confidence: 0.87
+Latency: 1.4 s
+
+## Cleanup Commands
+```
+kubectl delete namespace finance-assistant
+aws eks delete-cluster --region us-east-1 --name finance-assistant
+```
+## Container Registry
+```
+ghcr.io/theepankumargandhi/finance-document-assistant-rag-agents-llamaindex:latest
+```
